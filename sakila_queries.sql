@@ -124,6 +124,8 @@ WHERE `table_name` = 'address';
 
 CREATE DATABASE IF NOT EXISTS sakila;
 
+USE sakila;
+
 
 -- 6a. Use `JOIN` to display the first and last names, as well as the address, of each staff member. Use the tables `staff` and `address`:
 
