@@ -52,7 +52,7 @@ as the difference between it and `VARCHAR` are significant).
 */
 
 ALTER TABLE actor
-    ADD COLUMN description BLOB;
+    ADD COLUMN description BLOB AFTER last_name;
     
 describe actor;
 
@@ -67,7 +67,7 @@ describe actor;
 
 -- 4a. List the last names of actors, as well as how many actors have that last name.
 
-SELECT last_name, COUNT(first_name) 
+SELECT last_name, COUNT(last_name)  AS last_name_count
 FROM actor
 GROUP BY last_name;
 
@@ -116,72 +116,61 @@ WHERE first_name = "HARPO"
 
 -- 5a. You cannot locate the schema of the `address` table. Which query would you use to re-create it?
 
-SHOW SCHEMAS;
+
+SHOW CREATE TABLE address;
 
 SELECT `table_schema` 
 FROM `information_schema`.`tables` 
 WHERE `table_name` = 'address';
-
-CREATE DATABASE IF NOT EXISTS sakila;
-
-USE sakila;
 
 
 -- 6a. Use `JOIN` to display the first and last names, as well as the address, of each staff member. Use the tables `staff` and `address`:
 
 SELECT staff.first_name, staff.last_name, address.address
 FROM staff 
-	JOIN address
+	INNER JOIN address
 	USING (address_id);
 
 
 -- 6b. Use `JOIN` to display the total amount rung up by each staff member in August of 2005. Use tables `staff` and `payment`.
     
-SELECT staff.first_name, staff.last_name, J.total_amount AS "Total Amount"
-FROM staff
-	JOIN 
-		(SELECT payment.staff_id, SUM(payment.amount) AS total_amount
-		 FROM payment 
-		 WHERE EXTRACT(YEAR_MONTH FROM payment.payment_date) = '200508'
-		 GROUP BY payment.staff_id) as J
-	USING (staff_id);
-
-
+SELECT s.first_name, s.last_name, sum(p.amount) AS "Total Amount"
+FROM staff AS s
+INNER JOIN payment AS p
+    ON p.staff_id = s.staff_id
+WHERE MONTH(p.payment_date) = 08 AND YEAR(p.payment_date) = 2005
+-- WHERE EXTRACT(YEAR_MONTH FROM payment.payment_date) = '200508'
+GROUP BY s.staff_id;
+    
+    
 -- 6c. List each film and the number of actors who are listed for that film. Use tables `film_actor` and `film`. Use inner join.
 
-SELECT film.title, A.number_of_actors
-FROM film
-	JOIN
-		(SELECT film_id, COUNT(actor_id) AS number_of_actors
-		 FROM film_actor
-		 GROUP BY film_id) AS A
-	USING (film_id);
+SELECT f.title, COUNT(a.actor_id)
+FROM film AS f
+INNER JOIN film_actor AS a
+	ON f.film_id = a.film_id
+GROUP BY f.title;
     
     
 -- 6d. How many copies of the film `Hunchback Impossible` exist in the inventory system?
     
-SELECT film.film_id, film.title, COUNT(*) AS  "Number of Copies"
-FROM inventory
-	JOIN film
+SELECT  f.title, COUNT(i.film_id) AS  "Number of Copies"
+FROM inventory AS I
+	INNER JOIN film AS f
     USING(film_id)
-WHERE UPPER(film.title) = 'HUNCHBACK IMPOSSIBLE' 
-GROUP BY film.film_id, film.title;
-
+WHERE UPPER(f.title) = 'HUNCHBACK IMPOSSIBLE' 
+GROUP BY f.title;
 
 /*
 6e. Using the tables `payment` and `customer` and the `JOIN` command, list the total paid by each customer. 
 List the customers alphabetically by last name: [Total amount paid](Images/total_payment.png) 
 */
-
-SELECT C.first_name, C.last_name, SUM(C.amount) as 'Total Amount Paid'
-FROM
-		(SELECT customer_id, first_name, last_name, amount
-		 FROM customer
-			JOIN payment
-			USING (customer_id)) AS C
-GROUP BY C.customer_id
-ORDER BY C.last_name, C.first_name;
-
+SELECT c.last_name, c.first_name, sum(p.amount) 
+FROM customer AS c
+INNER JOIN payment AS p
+	USING(customer_id)
+GROUP BY c.customer_id
+ORDER by c.last_name;
     
 /*
 7a. The music of Queen and Kris Kristofferson have seen an unlikely resurgence. As an unintended consequence, 
@@ -193,7 +182,7 @@ SELECT title
 FROM film
 WHERE (title LIKE "K%" 
 	OR title LIKE "Q%")
-    AND language_id =
+    AND language_id IN
 		(SELECT language_id 
          FROM language
          WHERE UPPER(name) = 'ENGLISH');
@@ -217,187 +206,79 @@ WHERE actor_id IN
 -- 7c. You want to run an email marketing campaign in Canada, for which you will need the names and email addresses of all Canadian customers. Use joins to retrieve this information.
 
 -- Using join
-
-SELECT first_name, last_name, email, CTRY.city
-FROM customer
-	JOIN
-	((SELECT address.*, C.city
-	  FROM address
-		  JOIN
-			  (SELECT city.*, country.country
-			   FROM city 
-				  JOIN country
-				  USING (country_id)
-			   WHERE country.country = "Canada") AS C
-		   USING (city_id))) AS CTRY
-	USING (address_id);
-
-
--- Using subquery
-
-SELECT first_name, last_name, email, address_id
-FROM customer
-WHERE address_id IN
-	(SELECT address_id
-	FROM address
-	WHERE city_id IN
-		(SELECT city_id 
-		FROM city
-		WHERE country_id =
-			(SELECT country_id 
-			FROM country
-			WHERE country = "Canada"
-            )
-		)
-	);
+    
+SELECT c.first_name, c.last_name, c.email, country.country
+FROM customer AS c
+INNER JOIN address AS a
+USING(address_id)
+INNER JOIN city
+USING (city_id)
+INNER JOIN country 
+USING (country_id)
+WHERE country.country = "Canada";
 
 
 -- 7d. Sales have been lagging among young families, and you wish to target all family movies for a promotion. Identify all movies categorized as _family_ films.
 
-SELECT film.title, J.name AS 'Category Name', film.rating 
-FROM 
-		film
-	RIGHT JOIN
-		(SELECT DISTINCT film_category.film_id, category.name, film_category.category_id 
-		FROM category
-			JOIN film_category
-			USING (category_id)
-		WHERE category.name IN ('Animation', 'Children', 'Classics', 'Comedy', 'Family', 'Music', 'New')) AS J
-	USING (film_id)
-WHERE film.rating IN ("G", "PG", "PG-13")
-ORDER BY film.title;
-
-
--- Using subquery
-
-SELECT F.title, F.rating
-FROM film AS F
-WHERE 
-	(F.rating IN ("PG", "G", "PG-13"))
-	AND 
-	(F.film_id IN 
-		(SELECT FC.film_id
-		FROM film_category AS FC
-		WHERE FC.category_id IN 
-			(SELECT C.category_id
-			FROM category AS C
-			WHERE C.name IN ('Animation', 'Children', 'Classics', 'Comedy', 'Family', 'Music', 'New'))))
-ORDER BY F.title;
+SELECT film.title, category.name 'Category Name', film.rating
+FROM film
+INNER JOIN film_category
+USING(film_id)
+INNER JOIN category
+USING(category_id)
+WHERE UPPER(category.name) = "FAMILY";
 
 
 -- 7e. Display the most frequently rented movies in descending order.
 
-SELECT film.title, J.rental_counts 
+SELECT film.title, COUNT(rental.rental_id) AS "Rentals"
 FROM film
-	JOIN
-		(SELECT film_id, COUNT(rental_id) AS rental_counts
-		 FROM inventory, rental
-		 WHERE inventory.inventory_id = rental.inventory_id
-		 GROUP BY film_id) AS J
-	USING (film_id)
-ORDER BY rental_counts DESC, title;
+INNER JOIN inventory
+USING(film_id)
+INNER JOIN rental
+USING(inventory_id)
+GROUP BY film.title
+ORDER BY Rentals DESC, film.title;
 
 
 -- 7f. Write a query to display how much business, in dollars, each store brought in.
 
-SELECT inventory.store_id, CONCAT('$', CONVERT(SUM(J.amount), CHAR)) AS "Total Rental Amount"
+SELECT inventory.store_id, SUM(payment.amount), CONCAT('$', CONVERT(SUM(payment.amount), CHAR)) AS "Total Rental Amount"
 FROM inventory
-	RIGHT JOIN
-		(SELECT payment.rental_id, rental.inventory_id, amount
-		 FROM payment, rental
-		 WHERE payment.rental_id = rental.rental_id) AS J
-	USING (inventory_id)
-GROUP BY inventory.store_id;
+INNER JOIN rental
+USING(inventory_id)
+INNER JOIN payment
+USING (rental_id)
+GROUP BY  inventory.store_id;
 
 
 -- 7g. Write a query to display for each store its store ID, city, and country.
-
+      
 SELECT store.store_id, city.city, country.country
-FROM store, city, country
-WHERE store.store_id = city.city_id
-	  AND city.country_id = country.country_id;
+FROM store
+INNER JOIN address
+USING(address_id)
+INNER JOIN city
+USING(city_id)
+INNER JOIN country
+USING(country_id);
 
-
+ 
 -- 7h. List the top five genres in gross revenue in descending order. (**Hint**: you may need to use the following tables: category, film_category, inventory, payment, and rental.)
 
--- First, find revenue per film
-
-SELECT inventory.film_id, SUM(J.amount) AS gorss_revenue_per_film
-FROM inventory
-	RIGHT JOIN 
-		(SELECT payment.amount, payment.rental_id, rental.inventory_id
-		FROM payment, rental
-		WHERE payment.rental_id = rental.rental_id) AS J
-	USING (inventory_id)
-GROUP BY inventory.film_id;
-
--- Second, find list of films with category
-
-SELECT film.film_id, title, film_category.category_id, category.name
-FROM film, film_category, category
-WHERE film.film_id = film_category.film_id
-	AND film_category.category_id = category.category_id
-order by title;
-    
--- Join above ttwo queries to get the top 5 category in gross revenue
-
-SELECT C.name, SUM(R.gorss_revenue_per_film) AS gross_revenue
-FROM 
-		(SELECT inventory.film_id, SUM(J.amount) AS gorss_revenue_per_film
-		 FROM inventory
-			RIGHT JOIN 
-				(SELECT payment.amount, payment.rental_id, rental.inventory_id
-				FROM payment, rental
-				WHERE payment.rental_id = rental.rental_id) AS J
-			USING (inventory_id)
-		GROUP BY inventory.film_id) AS R
-	LEFT JOIN
-		(SELECT film.film_id, title, film_category.category_id, category.name
-		FROM film, film_category, category
-		WHERE film.film_id = film_category.film_id
-			AND film_category.category_id = category.category_id) AS C
-	USING (film_id)
-GROUP BY C.name
-ORDER BY gross_revenue DESC;
-
-
--- The following queries are for verify the query result is correct for Sports category
-
-select film_id from film_category where category_id = 15  order by film_id;
-
-select inventory_id 
-from inventory
-	join 
-		(select film_id from film_category where category_id = 15  order by film_id) AS F
-	using (film_id);
-
-select rental_id 
-from rental 
-	join
-		(select inventory_id 
-		from inventory
-			join 
-				(select film_id from film_category where category_id = 15  order by film_id) AS F
-		using (film_id)) as R
-	using(inventory_id);
-
-select sum(amount)
-from payment
-	join
-		(select rental_id 
-			from rental 
-				join
-					(select inventory_id
-						from inventory
-							join 
-								(select film_id 
-									from film_category 
-								where category_id = 15  
-                                order by film_id) AS F
-							using (film_id)) as R
-				using(inventory_id)) as P
-	using (rental_id);
-
+SELECT category.name, SUM(payment.amount) AS "Revenue"
+FROM category
+INNER JOIN film_category
+USING(category_id)
+INNER JOIN inventory
+USING(film_id)
+INNER JOIN rental
+USING(inventory_id)
+INNER JOIN payment
+USING(rental_id)
+GROUP BY category.name
+ORDER BY Revenue DESC
+LIMIT 5;
 
 /*
 8a. In your new role as an executive, you would like to have an easy way of viewing the Top five genres by gross revenue. 
@@ -405,24 +286,20 @@ Use the solution from the problem above to create a view. If you haven't solved 
 */
 
 CREATE VIEW view_top_five_genres AS
-	SELECT C.name, SUM(R.gorss_revenue_per_film) AS gross_revenue
-	FROM 
-			(SELECT inventory.film_id, SUM(J.amount) AS gorss_revenue_per_film
-			FROM inventory
-				RIGHT JOIN 
-					(SELECT payment.amount, payment.rental_id, rental.inventory_id
-					FROM payment, rental
-					WHERE payment.rental_id = rental.rental_id) AS J
-				USING (inventory_id)
-			GROUP BY inventory.film_id) AS R
-		LEFT JOIN
-			(SELECT film.film_id, title, film_category.category_id, category.name
-			FROM film, film_category, category
-			WHERE film.film_id = film_category.film_id
-				AND film_category.category_id = category.category_id) AS C
-		USING (film_id)
-	GROUP BY C.name
-	ORDER BY gross_revenue DESC; 
+SELECT category.name, SUM(payment.amount) AS "Revenue"
+FROM category
+INNER JOIN film_category
+USING(category_id)
+INNER JOIN inventory
+USING(film_id)
+INNER JOIN rental
+USING(inventory_id)
+INNER JOIN payment
+USING(rental_id)
+GROUP BY category.name
+ORDER BY Revenue DESC
+LIMIT 5;
+
 
 
 -- 8b. How would you display the view that you created in 8a?
