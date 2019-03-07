@@ -1,6 +1,7 @@
 
 USE sakila;
 
+
 -- 1a. Display the first and last names of all actors from the table `actor`.
 
 SELECT first_name, last_name 
@@ -156,6 +157,7 @@ FROM inventory AS I
 WHERE UPPER(f.title) = 'HUNCHBACK IMPOSSIBLE' 
 GROUP BY f.title;
 
+		    
 /*
 6e. List the total paid by each customer 
 List the customers alphabetically by last name: [Total amount paid](Images/total_payment.png) 
